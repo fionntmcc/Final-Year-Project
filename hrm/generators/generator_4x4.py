@@ -66,3 +66,42 @@ def is_valid(board: np.ndarray, row: int, col: int, digit: int) -> bool:
         return False
     
     return True
+
+def print_puzzle(puzzle: np.ndarray, title: str = "Puzzle"):
+    """Print puzzle to console
+    Args:
+        puzzle: (4, 4) array
+        title: Title to display
+    """
+    print(f"\n{title}:")
+    print("┌───────┐")
+    for i in range(4):
+        row_str = "│ "
+        for j in range(4):
+            row_str += "·" if puzzle[i, j] == 0 else str(puzzle[i, j])
+            row_str += " " if j != 1 else " │ "
+        row_str += "│"
+        print(row_str)
+        if i == 1:
+            print("├───────┤")
+    print("└───────┘")
+
+
+def generate_dataset(size: int, num_clues: int = 10) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate 'n' puzzles
+    Args:
+        size: Number of puzzles to generate
+        num_clues: Number of given cells in each puzzle
+    Returns:
+        puzzles: (size, 4, 4) array of puzzles
+        solutions: (size, 4, 4) array of solutions
+    """
+    puzzles = []
+    solutions = []
+    
+    for _ in range(size):
+        puzzle, solution = generate_puzzle(num_clues=num_clues)
+        puzzles.append(puzzle)
+        solutions.append(solution)
+    
+    return np.array(puzzles), np.array(solutions)
