@@ -34,6 +34,7 @@ class SudokuDataset(Dataset):
     def __getitem__(self, idx):
         return self.puzzles[idx], self.targets[idx][0], self.targets[idx][1]
 
+
 def train_model(num_epochs: int = 20, 
                 train_size: int = 1000,
                 hidden_dim: int = 64,
@@ -187,3 +188,77 @@ def train_model(num_epochs: int = 20,
     print(f"Training history saved to model/training_history.json")
     
     return model
+
+
+def test_model():
+    """Test the trained HRM model"""
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # Load model
+    model = HRM_Sudoku(hidden_dim=64, max_iterations=10).to(device)
+    model.load_state_dict(torch.load('model/hrm_sudoku.pt', map_location=device))
+    model.eval()
+    
+    print("\n" + "="*50)
+    print("Testing HRM Sudoku Solver")
+    print("="*50)
+    
+    from generator import generate_puzzle
+    
+    correct = 0
+    total_iters = []
+    total_residuals = []
+    
+    for i in range(10):
+        puzzle, solution = generate_puzzle()
+        puzzle_tensor = torch.from_numpy(puzzle).unsqueeze(0).long().to(device)
+        
+        with torch.no_grad():
+            cell_logits, digit_logits, traces = model(puzzle_tensor, return_traces=True)
+            cell_pred = torch.argmax(cell_logits[0]).item()
+            digit_pred = torch.argmax(digit_logits[0]).item() + 1
+        
+        pred_row, pred_col = cell_pred // 4, cell_pred % 4
+        
+        # Find first empty cell
+        empty = np.argwhere(puzzle == 0)
+        target_row, target_col = empty[0]
+        target_digit = solution[target_row, target_col]
+        
+        is_correct = (pred_row == target_row and pred_col == target_col and 
+                     digit_pred == target_digit)
+        
+        if is_correct:
+            correct += 1
+            status = "✓"
+        else:
+            status = "✗"
+        
+        total_iters.append(traces['num_iterations'])
+        total_residuals.append(traces['residuals'][-1])
+        
+        print(f"Puzzle {i+1}: {status} "
+              f"Pred=({pred_row},{pred_col})={digit_pred}, "
+              f"True=({target_row},{target_col})={target_digit} "
+              f"[iters={traces['num_iterations']}, res={traces['residuals'][-1]:.4f}]")
+    
+    print(f"\nAccuracy: {correct}/10 = {correct*10}%")
+    print(f"Avg iterations: {np.mean(total_iters):.1f}")
+    print(f"Avg final residual: {np.mean(total_residuals):.4f}")
+
+
+if __name__ == "__main__":
+    print("="*50)
+    print("HRM Sudoku Solver - Training")
+    print("="*50)
+    print()
+    
+    model = train_model(
+        num_epochs=20, 
+        train_size=1000,
+        hidden_dim=64,
+        max_iterations=10,
+        halt_weight=0.1
+    )
+    
+    test_model()
