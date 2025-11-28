@@ -7,11 +7,11 @@ from tqdm import tqdm
 from pathlib import Path
 import json
 
-from model_hrm import HRM_Sudoku
-from generator import generate_dataset, print_puzzle
+from models import HRM_4x4 
+from generators import generate_dataset, print_puzzle
 
 
-class SudokuDataset(Dataset):
+class Dataset_4x4(Dataset):
     def __init__(self, puzzles: np.ndarray, solutions: np.ndarray):
         self.puzzles = torch.from_numpy(puzzles).long()
         
@@ -41,7 +41,7 @@ def train_model(num_epochs: int = 20,
                 max_iterations: int = 10,
                 halt_weight: float = 0.1):
     """
-    Train the HRM Sudoku solver
+    Train the HRM 4x4 solver
     
     Args:
         num_epochs: Number of training epochs
@@ -58,14 +58,14 @@ def train_model(num_epochs: int = 20,
     train_puzzles, train_solutions = generate_dataset(train_size)
     val_puzzles, val_solutions = generate_dataset(100)
     
-    train_data = SudokuDataset(train_puzzles, train_solutions)
-    val_data = SudokuDataset(val_puzzles, val_solutions)
+    train_data = Dataset_4x4(train_puzzles, train_solutions)
+    val_data = Dataset_4x4(val_puzzles, val_solutions)
     
     train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
     val_loader = DataLoader(val_data, batch_size=32)
     
     # Create HRM model
-    model = HRM_Sudoku(hidden_dim=hidden_dim, max_iterations=max_iterations).to(device)
+    model = HRM_4x4(hidden_dim=hidden_dim, max_iterations=max_iterations).to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -176,7 +176,7 @@ def train_model(num_epochs: int = 20,
         # Save best model
         if val_acc > best_acc:
             best_acc = val_acc
-            torch.save(model.state_dict(), 'model/hrm_sudoku.pt')
+            torch.save(model.state_dict(), 'model/hrm_4x4.pt')
             print(f"  ✓ Saved (best: {best_acc:.1%})")
         print()
     
@@ -195,12 +195,12 @@ def test_model():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Load model
-    model = HRM_Sudoku(hidden_dim=64, max_iterations=10).to(device)
-    model.load_state_dict(torch.load('model/hrm_sudoku.pt', map_location=device))
+    model = HRM_4x4(hidden_dim=64, max_iterations=10).to(device)
+    model.load_state_dict(torch.load('model/hrm_4x4.pt', map_location=device))
     model.eval()
     
     print("\n" + "="*50)
-    print("Testing HRM Sudoku Solver")
+    print("Testing HRM 4x4 Solver")
     print("="*50)
     
     from generator import generate_puzzle
@@ -249,7 +249,7 @@ def test_model():
 
 if __name__ == "__main__":
     print("="*50)
-    print("HRM Sudoku Solver - Training")
+    print("HRM 4x4 Solver - Training")
     print("="*50)
     print()
     
