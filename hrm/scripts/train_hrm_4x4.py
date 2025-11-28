@@ -35,3 +35,156 @@ class Dataset_4x4(Dataset):
         return self.puzzles[idx], self.targets[idx][0], self.targets[idx][1]
 
 
+def train_model(num_epochs: int = 20, 
+                train_size: int = 1000,
+                hidden_dim: int = 64,
+                max_iterations: int = 10,
+                halt_weight: float = 0.1):
+    """
+    Train the HRM 4x4 solver
+    
+    Args:
+        num_epochs: Number of training epochs
+        train_size: Number of training puzzles
+        hidden_dim: Hidden dimension size
+        max_iterations: Maximum Worker iterations
+        halt_weight: Weight for halting penalty
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Training on: {device}\n")
+    
+    # Generate data
+    print("Generating training data...")
+    train_puzzles, train_solutions = generate_dataset(train_size)
+    val_puzzles, val_solutions = generate_dataset(100)
+    
+    train_data = Dataset_4x4(train_puzzles, train_solutions)
+    val_data = Dataset_4x4(val_puzzles, val_solutions)
+    
+    train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
+    val_loader = DataLoader(val_data, batch_size=32)
+    
+    # Create HRM model
+    model = HRM_4x4(hidden_dim=hidden_dim, max_iterations=max_iterations).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    
+    print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"Max iterations: {max_iterations}\n")
+    
+    best_acc = 0
+    Path('model').mkdir(exist_ok=True)
+    
+    # Training metrics
+    training_history = {
+        'train_loss': [],
+        'train_acc': [],
+        'val_acc': [],
+        'avg_iterations': [],
+        'avg_residuals': []
+    }
+    
+    # Training loop
+    for epoch in range(1, num_epochs + 1):
+        model.train()
+        total_loss = 0
+        correct = 0
+        total = 0
+        epoch_iterations = []
+        epoch_residuals = []
+        
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs}")
+        for puzzles, cells, digits in pbar:
+            puzzles = puzzles.to(device)
+            cells = cells.to(device).long()
+            digits = digits.to(device).long()
+            
+            optimizer.zero_grad()
+            
+            # Forward pass with HRM
+            cell_logits, digit_logits, traces = model(puzzles, return_traces=False)
+            
+            # Task loss: predict correct cell and digit
+            task_loss = (nn.functional.cross_entropy(cell_logits, cells) + 
+                        2.0 * nn.functional.cross_entropy(digit_logits, digits))
+            
+            # Halting penalty: encourage efficient iteration count
+            halt_penalty = model.get_halt_penalty(traces, target_iterations=5)
+            
+            # Total loss
+            loss = task_loss + halt_weight * halt_penalty
+            
+            loss.backward()
+            optimizer.step()
+            
+            total_loss += loss.item()
+            
+            # Track metrics
+            epoch_iterations.append(traces['num_iterations'])
+            if traces['residuals']:
+                epoch_residuals.append(traces['residuals'][-1])
+            
+            # Accuracy
+            cell_pred = torch.argmax(cell_logits, dim=1)
+            digit_pred = torch.argmax(digit_logits, dim=1)
+            correct += ((cell_pred == cells) & (digit_pred == digits)).sum().item()
+            total += len(puzzles)
+            
+            pbar.set_postfix({
+                'loss': f'{loss.item():.3f}', 
+                'acc': f'{correct/total:.1%}',
+                'iters': f'{traces["num_iterations"]}'
+            })
+        
+        train_acc = correct / total
+        avg_iters = np.mean(epoch_iterations)
+        avg_res = np.mean(epoch_residuals) if epoch_residuals else 0
+        
+        # Validation
+        model.eval()
+        val_correct = 0
+        val_total = 0
+        val_iterations = []
+        
+        with torch.no_grad():
+            for puzzles, cells, digits in val_loader:
+                puzzles = puzzles.to(device)
+                cells = cells.to(device).long()
+                digits = digits.to(device).long()
+                
+                cell_logits, digit_logits, traces = model(puzzles)
+                val_iterations.append(traces['num_iterations'])
+                
+                cell_pred = torch.argmax(cell_logits, dim=1)
+                digit_pred = torch.argmax(digit_logits, dim=1)
+                val_correct += ((cell_pred == cells) & (digit_pred == digits)).sum().item()
+                val_total += len(puzzles)
+        
+        val_acc = val_correct / val_total
+        val_avg_iters = np.mean(val_iterations)
+        
+        # Store history
+        training_history['train_loss'].append(total_loss / len(train_loader))
+        training_history['train_acc'].append(train_acc)
+        training_history['val_acc'].append(val_acc)
+        training_history['avg_iterations'].append(avg_iters)
+        training_history['avg_residuals'].append(avg_res)
+        
+        print(f"Epoch {epoch}:")
+        print(f"  Train: Acc={train_acc:.1%}, Iters={avg_iters:.1f}, Residual={avg_res:.4f}")
+        print(f"  Val:   Acc={val_acc:.1%}, Iters={val_avg_iters:.1f}")
+        
+        # Save best model
+        if val_acc > best_acc:
+            best_acc = val_acc
+            torch.save(model.state_dict(), 'model/hrm_4x4.pt')
+            print(f"  ✓ Saved (best: {best_acc:.1%})")
+        print()
+    
+    # Save training history
+    with open('model/training_history.json', 'w') as f:
+        json.dump(training_history, f, indent=2)
+    
+    print(f"Training complete! Best accuracy: {best_acc:.1%}")
+    print(f"Training history saved to model/training_history.json")
+    
+    return model
