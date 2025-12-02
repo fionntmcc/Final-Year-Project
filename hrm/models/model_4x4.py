@@ -5,8 +5,9 @@ from typing import Tuple
 
 
 class HRM_4x4(nn.Module):
-    def __init__(self, hidden_dim: int = 64):
+    def __init__(self, hidden_dim: int = 64, max_iterations: int = 10):
         super().__init__()
+        self.max_iterations = max_iterations
         
         # Embedding layer for puzzle state (0-4)
         self.embed = nn.Embedding(5, 16)
@@ -34,14 +35,16 @@ class HRM_4x4(nn.Module):
         self.digit_decoder = nn.Linear(hidden_dim, 4)   # 4 digits
 
         
-    def forward(self, puzzle: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, puzzle: torch.Tensor, return_traces: bool = False) -> Tuple[torch.Tensor, torch.Tensor, dict]:
         """
         Forward pass of the HRM model for 4x4 Sudoku.
         Args:
             puzzle: (batch, 4, 4) integers 0-4
+            return_traces: Whether to return execution traces
         Returns:
             cell_logits: (batch, 16) 
             digit_logits: (batch, 4)
+            traces: dict with execution stats
         """
         batch_size = puzzle.shape[0]
         
@@ -58,5 +61,12 @@ class HRM_4x4(nn.Module):
         cell_logits = self.cell_decoder(refined)
         digit_logits = self.digit_decoder(refined)
         
-        # return cell and value
-        return cell_logits, digit_logits
+        traces = {
+            'num_iterations': 1,
+            'residuals': [0.0]
+        }
+        
+        return cell_logits, digit_logits, traces
+
+    def get_halt_penalty(self, traces: dict, target_iterations: int) -> torch.Tensor:
+        return torch.tensor(0.0, device=self.embed.weight.device)
