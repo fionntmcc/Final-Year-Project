@@ -1,5 +1,11 @@
 """
 Layers for the HRM model.
+
+Attention - Applies weights to input tokens based on their relevance to each other.
+SwiGLU - Swish Gated Linear Unit activation - Gating adds more control over which parts of input activate.
+RMS Norm - Root Mean Square Normalisation maintains stable activations and not computationally expensive compared to Linear Normalisation.
+
+Both modules use Attention -> RMS Norm -> SwiGLU -> RMS Norm sequence per block.
 """
 
 from typing import Tuple, Dict, Optional
